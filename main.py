@@ -34,7 +34,7 @@ import imaplib
 import email.message
 import time  # for sleep
 import os               # to get environment variables
-
+import re               # needed!  will be used in code in the database
 
 # Set some global variables
 site_id = ''
@@ -50,7 +50,10 @@ job_location = ''
 job_posted = ''
 job_url = ''
 
-max_pages = 5
+max_pages = 5               # maximum number of results pages to go through; consider better search criteria
+errmsg = ''
+errors = []                 # keep a list of errors and then add them to database for posterity
+
 
 ##########################################
 # SUBROUTINES GO HERE
@@ -65,6 +68,8 @@ def scan_by_pattern():
     global job_location
     global job_posted
     global job_url
+    global errmsg
+    global errors
 
     sql = "SELECT " \
         "pattern_name, search_code, dropdown_code, page_results_code, " \
@@ -76,7 +81,9 @@ def scan_by_pattern():
     cursor.execute(sql)
     patterns = cursor.fetchall()
     if len(patterns) == 0:
-        print("!!! ERROR Pattern not found for Site_Description = ", site_description, "...SQL=", sql)
+        errmsg = "!!! ERROR Pattern not found for Site_Description = " + site_description + "...SQL=" + sql
+        errors.append(errmsg)
+        print(errmsg)
         return
 
     pattern = patterns[0]               # there can be only ONE
@@ -122,8 +129,14 @@ def scan_by_pattern():
             time.sleep(2)
             print("...popup clicked ok")
         except Exception as e:
-            print("!!! WARNING Could not click on popup.  Will try to continue.  Code=", popup_code)
-            print("Error = ", e)
+            errmsg = "!!! WARNING Could not click on popup.  Will try to continue." \
+                    " Site=" + site_description + \
+                    " Pattern=" + pattern_name + \
+                    " URL=" + site_url + \
+                    " Code=" + popup_code + \
+                    " Error=" + str(e)
+            errors.append(errmsg)
+            print(errmsg)
 
     # Is there a dropdown to click (could be sort or records per page)    #TODO: maybe combine with popup_code?
     if dropdown_code:
@@ -134,23 +147,38 @@ def scan_by_pattern():
             print("...dropdown menu clicked ok; html refreshed")
 
         except Exception as e:
-            print("!!! WARNING Could not click dropdown menu as expected.  Will try to continue.  Code=", dropdown_code)
+            print()
             print("Error = ", e)
+            errmsg = "!!! WARNING Could not click dropdown menu as expected.  Will try to continue."  \
+                    " Site=" + site_description + \
+                    " Pattern=" + pattern_name + \
+                    " URL=" + site_url + \
+                    " Code=" + dropdown_code + \
+                    " Error=" + str(e)
+            errors.append(errmsg)
+            print(errmsg)
+
 
     # Do we need to enter a search on the screen?
     if site_search:
         try:
-            print("search found to enter")
+            #print("search found to enter")
             searchbox = eval(search_code)               # the search_code will return a reference to the search box
             searchbox.send_keys(site_search)
             actions = ActionChains(browser)
             actions.send_keys(Keys.ENTER).perform()
             time.sleep(2)
             soup = BeautifulSoup(browser.page_source, "html.parser")
-            print("...search entered; html refreshed")
+            print("...search entered=", site_search)
         except Exception as e:
-            print("!!! WARNING Could not enter search as expected.  Will try to continue.  Code=", search_code)
-            print("Error = ", e)
+            errmsg = "!!! WARNING Could not enter search as expected.  Will try to continue."  \
+                    " Site=" + site_description + \
+                    " Pattern=" + pattern_name + \
+                    " URL=" + site_url + \
+                    " Code=" + search_code + \
+                    " Error=" + str(e)
+            errors.append(errmsg)
+            print(errmsg)
 
 
     jobs = []                          # start with a blank list of jobs for this site
@@ -161,7 +189,13 @@ def scan_by_pattern():
         pages += 1                      # increment page count
 
         if data_rows_code[:5] != "soup.":
-            print("!!! ERROR - unexpected value in data_rows_code.  Skiping site.   Value=", data_rows_code)
+            errmsg = "!!! ERROR - unexpected value in data_rows_code.  Skipping site. " \
+                " Site=" + site_description + \
+                " Pattern=" + pattern_name + \
+                " URL=" + site_url + \
+                " Code=" + data_rows_code
+            errors.append(errmsg)
+            print(errmsg)
             break
 
         rows = eval(data_rows_code)     # Get the results from the current page
@@ -180,8 +214,16 @@ def scan_by_pattern():
             try:
                 job_title = eval(title_code)
             except Exception as e:
-                print("!!! WARNING - Error parsing job title.  Skipping job.  Error- ", e, "...Row data=", row)
-                job_title = ""
+                errmsg = "!!! WARNING - Error parsing job title.  Skipping job." \
+                         " Site=" + site_description + \
+                         " Pattern=" + pattern_name + \
+                         " URL=" + site_url + \
+                         " Code=" + title_code + \
+                         " Error=" + str(e) + \
+                         " Row=" + str(row)
+                errors.append(errmsg)
+                print(errmsg)
+                job_title = ""           # won't be written to the database anyway
                 continue            # next job
 
             # REQ - can be on page 1 or page 2
@@ -189,7 +231,15 @@ def scan_by_pattern():
                 try:
                     job_req = eval(req_code)
                 except Exception as e:
-                    print("!!! WARNING - Error parsing job requisition; will use blank.  Error- ", e, "...Row data=", row)
+                    errmsg = "!!! WARNING - Error parsing job requisition. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + site_url + \
+                             " Code=" + req_code + \
+                             " Error=" + str(e) + \
+                             " Row=" + str(row)
+                    errors.append(errmsg)
+                    print(errmsg)
                     job_req = ""
 
             # LOCATION
@@ -197,7 +247,15 @@ def scan_by_pattern():
                 try:
                     job_location = eval(location_code)
                 except Exception as e:
-                    print("!!! WARNING - Error parsing location; will use blank.  Error- ", e, "...Row data=", row)
+                    errmsg = "!!! WARNING - Error parsing location. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + site_url + \
+                             " Code=" + location_code + \
+                             " Error=" + str(e) + \
+                             " Row=" + str(row)
+                    errors.append(errmsg)
+                    print(errmsg)
                     job_location = ""
 
             # POSTED DATE
@@ -205,7 +263,15 @@ def scan_by_pattern():
                 try:
                     job_posted = eval(posted_code)
                 except Exception as e:
-                    print("!!! WARNING - Error parsing posted date; will use blank.  Error- ", e, "...Row data=", row)
+                    errmsg = "!!! WARNING - Error parsing posted date. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + site_url + \
+                             " Code=" + posted_code + \
+                             " Error=" + str(e) + \
+                             " Row=" + str(row)
+                    errors.append(errmsg)
+                    print(errmsg)
                     job_posted = ""
 
             # URL can only be on page 1
@@ -215,7 +281,15 @@ def scan_by_pattern():
                     if job_url[:1] == '/':                     # if a relative link, then add the base part
                         job_url = base_url + job_url
                 except Exception as e:
-                    print("!!! WARNING - Error parsing URL; will use site_url.  Error- ", e, "...Row data=", row)
+                    errmsg = "!!! WARNING - Error parsing job URL. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + site_url + \
+                             " Code=" + url_code + \
+                             " Error=" + str(e) + \
+                             " Row=" + str(row)
+                    errors.append(errmsg)
+                    print(errmsg)
                     job_url = site_url
             if job_url == '':                                  # if still not found, then default back to site_url
                 # print("...url still not found, using site url.")
@@ -242,9 +316,16 @@ def scan_by_pattern():
                 print("...paging button pressed on page =", pages)
             except Exception as e:
                 if pages == 1:
-                    print("!!! WARNING.  Could not find/click the paging button on first page.  Code = ",
-                          page_results_code)
-                    print("Error = ", e)
+                    errmsg = "!!! WARNING.  Could not find/click the paging button on first page. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + site_url + \
+                             " Code=" + page_results_code + \
+                             " Error=" + str(e)
+                    errors.append(errmsg)
+                    print(errmsg)
+
+
                     # time.sleep(30)
                 else:
                     print("...paging button no longer found.  Pages read = ", pages)
@@ -284,7 +365,15 @@ def scan_by_pattern():
                     job_req = eval(req_code)
                     #print('detail.req=', job_req)
                 except Exception as e:
-                    print("!!! WARNING - Error parsing job requisition; using blank.  Error- ", e, "...Row data=", row)
+                    errmsg = "!!! WARNING - Error parsing job requisition on details page. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + job_url + \
+                             " Code=" + req_code + \
+                             " Error=" + str(e) + \
+                             " Job=" + str(job)
+                    errors.append(errmsg)
+                    print(errmsg)
                     job_req = ""
 
             # LOCATION
@@ -293,7 +382,15 @@ def scan_by_pattern():
                     job_location = eval(location_code)
                     #print('detail.location=', job_location)
                 except Exception as e:
-                    print("!!! WARNING - Error parsing location; using blank.  Error- ", e, "...Row data=", row)
+                    errmsg = "!!! WARNING - Error parsing location on details page. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + job_url + \
+                             " Code=" + location_code + \
+                             " Error=" + str(e) + \
+                             " Job=" + str(job)
+                    errors.append(errmsg)
+                    print(errmsg)
                     job_location = ""
 
             # DATE POSTED
@@ -301,7 +398,15 @@ def scan_by_pattern():
                 try:
                     job_posted = eval(posted_code)
                 except Exception as e:
-                    print("!!! WARNING - Error parsing posted date; using blank.  Error- ", e, "...Row data=", row)
+                    errmsg = "!!! WARNING - Error parsing posted date on details page. " \
+                             " Site=" + site_description + \
+                             " Pattern=" + pattern_name + \
+                             " URL=" + job_url + \
+                             " Code=" + posted_code + \
+                             " Error=" + str(e) + \
+                             " Job=" + str(job)
+                    errors.append(errmsg)
+                    print(errmsg)
                     job_posted = ""
 
             # URL - can only be on page 1, not relevant here
@@ -350,9 +455,15 @@ def scan_by_pattern():
 
 def save_job():
 
+    global errmsg
+    global errors
+
     # If we don't have a job title value, then something went really wrong.  Skip this routine.
     if job_title == '':
-            print("!!! WARNING - Job title value was missing.  Skipping save_job routine....")
+            errmsg = "!!! ERROR - Job title value was missing.  Something really wrong!" \
+                     " Site=" + site_description
+            errors.append(errmsg)
+            print(errmsg)
             return
 
     # See if the job has already been logged.  Return if so.
@@ -392,9 +503,16 @@ def save_job():
         dbcon.commit()
         print("...job saved to database.")
     except Exception as e:
-        print("!!! INSERT ERROR - Could not insert new job.  SQL='" + sql + ". Error: " + str(e))
+        errmsg = "!!! INSERT ERROR - Could not insert new job" \
+                 " SQL=" + sql + \
+                 " Error=" + str(e)
+        errors.append(errmsg)
+        print(errmsg)
 
 def update_site():
+
+    global errmsg
+    global errors
 
     # Site variables already populated in main routine, but 2 will be changed, set global
     global site_last_scan_date
@@ -417,18 +535,23 @@ def update_site():
 
 def send_email():
 
+    global errmsg
+    global errors
+    global hour
+
     sql = "select S.Site_Description, J.Job_Title, J.Job_Inserted, J.Job_Req, J.Job_Posted, J.Job_URL, J.Job_Location "\
         "from Jobs J, Sites S " \
         "where J.Site_Id=S.Site_Id "
 
-
     # If the time > 8pm, then send the whole day's findings
-    if prod != "true": hour = 20      # Force it for non-prod
+    if prod != "true":
+        hour = 20      # Force it for non-prod
+
     if int(hour) > 19:          # Get everything from today
-        emailsubject="JOB Postings Summary for " + today
+        emailsubject = "JOB Postings Summary for " + today
         sql += "AND Job_Inserted > '" + today + "';"
     else:                       # Get just the lat run
-        emailsubject="JOB Postings Incremental for " + run_dt
+        emailsubject = "JOB Postings Incremental for " + run_dt
         sql += "AND Job_Inserted = '" + run_dt + "';"
 
     if prod != "true":
@@ -452,7 +575,7 @@ def send_email():
         "</tr>"
 
     # will trigger the company row
-    previous_company=""
+    previous_company = ''
 
     for job in jobs:
         company = job[0]    # Capture all the values
@@ -475,6 +598,14 @@ def send_email():
         # html += "<td>" + location + "</td>"
         html += "</tr>"
 
+    # List out the errors
+    if errors:
+        html += "<tr><td>Error(s) detected:</td></tr>"
+        for err in errors:
+            html += "<tr><td>" + err + "</td></tr>"
+    else:
+        html += "<tr><td>Good news everyone...no errors logged.</td></tr>"
+
     # Finish the html
     html += "</table></html>"
 
@@ -495,7 +626,7 @@ def send_email():
     new_message.set_payload(html)
     mailbox.append("INBOX", emailflag, imaplib.Time2Internaldate(time.time()), str(new_message).encode('utf-8'))
 
-    print("Email sent")
+    print("...email sent")
 
     # Logout of mailbox
     mailbox.logout()
@@ -519,7 +650,9 @@ try:
     dbcon = sqlite3.connect('./db/jobs.db')
     print("Database connected")
 except Exception as e:
-    print("!!! ERROR Database NOT connected.  Error=" + str(e))
+    errmsg = "!!! FATAL ERROR Database NOT connected." \
+             " Error=" + str(e)
+    print(errmsg)
     quit()
 
 # GET the environment variable  (PROD vs NONPROD)
@@ -556,8 +689,10 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
         cursor.execute(sql)
         sites = cursor.fetchall()
     except Exception as e:
-        print("!!! Fatal ERROR retrieving sites ", e)
-        time.sleep(60)
+        errmsg = "!!! INSERT ERROR - Could not retrieve a list of sites." \
+                 " SQL=" + sql + \
+                 " Error=" + str(e)
+        print(errmsg)
         quit()
 
 
@@ -575,15 +710,30 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
 
         scan_by_pattern()                # Should be the primary way
 
+    # Close browser
+    browser.close()
+
+    # List out the errors
+    if errors:
+        print("***** error(s) detected **********")
+        for err in errors:
+            print(err)
+            sql = "INSERT INTO errors (error_inserted, error_description) VALUES (" \
+                "'" + run_dt + "'," \
+                "'" + err.replace("'", "''") + "')"             #Double up the single quotes in the error string
+            #print("save error sql=", sql)
+            cursor.execute(sql)
+            dbcon.commit()
+        print("******* end errors ***************")
+    else:
+        print("...no errors logged.  Woo hoo!")
+
     # Send the report to INBOX
     send_email()
 
-    # Clean up
-    browser.close()
-
     # sleep for awhile if production, else quit after one loop
     if prod == "true":
-        print("sleeping...")
+        print("...sleeping...")
         time.sleep(14400)       # four hours
     else:
         break                   # out of forever loop
@@ -593,6 +743,10 @@ quit()          # Don't go past here
 ##########################################################
 # SAMPLE CODE, Parking Lot, Obsolete below; cannot be run
 ###########################################################
+
+# soup.find('table', {'id': 'jobs_table'}).find_all('tr')       # works, but brings back heading row
+# soup.find_all('tr', {'id': 'row_job'})                        # didn't work
+
 
 def cellar():
 
@@ -1301,3 +1455,4 @@ def cellar():
 
             save_job()
         update_site()
+
