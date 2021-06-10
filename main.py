@@ -678,7 +678,7 @@ except Exception as e:
 
 # GET the environment variable  (PROD vs NONPROD)
 prod = os.environ.get("PRODUCTION").lower()
-if prod = "true":       # prod-settings
+if prod == "true":       # prod-settings
     verbose = False
     max_pages = 5
 else:                   # non-prod settings
