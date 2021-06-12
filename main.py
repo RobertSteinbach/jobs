@@ -120,7 +120,7 @@ def scan_by_pattern():
     #browser.fullscreen_window()
     browser.get(site_url)
     time.sleep(2)                   #TODO put in better wait code
-    browser.execute_script("window.scrollTo(0, document.body.scrollHeight/4);")        # page down 25%
+    #browser.execute_script("window.scrollTo(0, document.body.scrollHeight/10);")        # page down 10%
     soup = BeautifulSoup(browser.page_source, "html.parser")
 
     #if browser.find_element_by_id('ccpa-button'): browser.find_element_by_id('ccpa-button').click(); if browser.find_element_by_id('gdpr-button'): browser.find_element_by_id('gdpr-button').click()
@@ -218,7 +218,9 @@ def scan_by_pattern():
 
             if verbose: print("*** PHASE 1 - Read search results ***")
 
+            #############
             # TITLE - can only be on page 1
+            #############
             try:
                 job_title = eval(title_code)
                 if verbose: print('row.title=', job_title)
@@ -235,7 +237,9 @@ def scan_by_pattern():
                 job_title = ""           # won't be written to the database anyway
                 continue            # next job
 
+            #############
             # REQ - can be on page 1 or page 2
+            #############
             if str(req_code).find('row.') > -1:
                 try:
                     job_req = eval(req_code)
@@ -252,7 +256,9 @@ def scan_by_pattern():
                     print(errmsg)
                     job_req = ""
 
+            #############
             # LOCATION - can be on page 1 or page 2
+            #############
             if str(location_code).find('row.') > -1:
                 try:
                     job_location = eval(location_code)
@@ -269,7 +275,9 @@ def scan_by_pattern():
                     print(errmsg)
                     job_location = ""
 
+            #############
             # POSTED DATE- can be on page 1 or page 2
+            #############
             if str(posted_code).find('row.') > -1:
                 try:
                     job_posted = eval(posted_code)
@@ -286,8 +294,10 @@ def scan_by_pattern():
                     print(errmsg)
                     job_posted = ""
 
+            #############
             # URL can only be on page 1, but there may not be a code in the database (e.g. workday)
-            if str(url_code).find('row.') > -1:
+            #############
+            if str(url_code)[:3] == 'row':
                 try:
                     job_url = eval(url_code)
                     if job_url[:1] == '/':                     # if a relative link, then add the base part
@@ -304,9 +314,9 @@ def scan_by_pattern():
                     errors.append(errmsg)
                     print(errmsg)
 
-            if job_url == '':                                  # if still not found, then default back to site_url
+            #if job_url == '':                                  # if still not found, then default back to site_url
                 # print("...url still not found, using site url.")
-                job_url = site_url
+            #    job_url = site_url
 
             job = {}            # Build a dictionary object of all the values that we have so far
                                 # Will put onto the jobs[] list to pass onto the next phase
@@ -447,11 +457,11 @@ def scan_by_pattern():
     job_count = len(jobs)
     for job in jobs:
 
-        job_title = job['title']
-        job_req = job['req']
-        job_location = job['location']
-        job_posted = job['posted']
-        job_url = job['url']
+        job_title = str(job['title']).strip()
+        job_req = str(job['req']).strip()
+        job_location = str(job['location']).strip()
+        job_posted = str(job['posted']).strip()
+        job_url = str(job['url']).strip()
 
         if verbose:
             print("********* job ***********")
@@ -559,9 +569,11 @@ def send_email():
     global errors
     global hour
 
-    sql = "select S.Site_Description, J.Job_Title, J.Job_Inserted, J.Job_Req, J.Job_Posted, J.Job_URL, J.Job_Location "\
-        "from Jobs J, Sites S " \
-        "where J.Site_Id=S.Site_Id "
+    sql = "select S.Site_Description, J.Job_Title, J.Job_Inserted, J.Job_Req, J.Job_Posted, J.Job_URL, " \
+            "J.Job_Location, S.Site_URL "\
+            "from Jobs J, Sites S " \
+            "where J.Site_Id=S.Site_Id " \
+            "order by Site_Description "
 
     # If the time > 8pm, then send the whole day's findings
     if prod != "true":
@@ -605,9 +617,10 @@ def send_email():
         posted = job[4]
         url = job[5]
         location = job[6]
+        site_url = job[7]
 
-        if company != previous_company:         # change in company, write out company header
-            html += "<tr width=100%><td>" + company + "</td></tr>"
+        if company != previous_company:         # change in company, write out company header w/link
+            html += "<tr width=100%><td><a href='" + site_url + "'>" + company + "</a></td></tr>"
             previous_company = company
 
         html += "<tr><td>&nbsp;</td>"
@@ -620,11 +633,11 @@ def send_email():
 
     # List out the errors
     if errors:
-        html += "<tr><td>Error(s) detected:</td></tr>"
+        html += "<tr><td><hr>Error(s) detected:</td></tr>"
         for err in errors:
-            html += "<tr><td>" + err + "</td></tr>"
+            html += "<tr><td colspan='5'>" + err + "</td></tr>"
     else:
-        html += "<tr><td colspan='3'>Good news everyone...no errors logged.</td></tr>"
+        html += "<tr><td colspan='5'><hr>No errors detected.</td></tr>"
 
     # Finish the html
     html += "</table></html>"
@@ -771,6 +784,11 @@ quit()          # Don't go past here
 
 # soup.find('table', {'id': 'jobs_table'}).find_all('tr')       # works, but brings back heading row
 # soup.find_all('tr', {'id': 'row_job'})                        # didn't work
+
+
+# Selenium CSS Selector TIPS
+#https://seleniumpythontutorial.wordpress.com/selenium-tips-css-selector/
+#browser.find_element_by_css_selector("ul.srSearchOptionList li:nth-of-type(3)").click()  #click the 3rd menu item
 
 
 def cellar():
