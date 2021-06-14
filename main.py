@@ -53,9 +53,17 @@ job_location = ''
 job_posted = ''
 job_url = ''
 
-errmsg = ''
+errmsg = ''                 # friendly error message
 errors = []                 # keep a list of errors and then add them to database for posterity
-verbose = False             # debugging flag
+err_dict = {}               # structured error dictionary.   Append to the errors[] list as we go.
+                                # err_dict['err_msg_friendly'] = "this is a friendly message"
+                                # err_dict['err_site'] = "this is the site name"
+                                # err_dict['err_pattern'] = "this is the pattern name"
+                                # err_dict['err_url'] = "this is the url in error"
+                                # err_dict['err_code'] = "this is the custom code from the database"
+                                # err_dict['err_msg_error'] = "this is the actual error message raised by the exception"
+
+verbose = True             # debugging flag
 
 ##########################################
 # SUBROUTINES GO HERE
@@ -72,6 +80,7 @@ def scan_by_pattern():
     global job_url
     global errmsg
     global errors
+    global err_dict
 
     # Read some data about this site - PATTERN
     sql = "SELECT " \
@@ -84,8 +93,14 @@ def scan_by_pattern():
     patterns = cursor.fetchall()
     if len(patterns) == 0:
         errmsg = "!!! ERROR Pattern not found for Site_Description = " + site_description + "...SQL=" + sql
-        errors.append(errmsg)
         print(errmsg)
+        err_dict['err_msg_friendly'] = errmsg
+        err_dict['err_site'] = site_description
+        err_dict['err_pattern'] = ''
+        err_dict['err_url'] = ''
+        err_dict['err_code'] = ''
+        err_dict['err_msg_error'] = ''
+        errors.append(err_dict)
         return
 
     pattern = patterns[0]               # there can be only ONE
@@ -120,38 +135,52 @@ def scan_by_pattern():
     #browser.fullscreen_window()
     browser.get(site_url)
     time.sleep(2)                   #TODO put in better wait code
-    #browser.execute_script("window.scrollTo(0, document.body.scrollHeight/10);")        # page down 10%
+    # browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")        # page to bottom
     soup = BeautifulSoup(browser.page_source, "html.parser")
 
-    #if browser.find_element_by_id('ccpa-button'): browser.find_element_by_id('ccpa-button').click(); if browser.find_element_by_id('gdpr-button'): browser.find_element_by_id('gdpr-button').click()
-
+    # When you really got to know....
+    #print("********* SOUP ******************")
+    #print(soup)
+    #print("********** END SOUP *************")
 
     # See if there is a pop-up to contend with
-    #           browser.find_element_by_class_name('closeNotiIcon').click()     #gets error cannot scroll into view
-    #
-    # https://stackoverflow.com/questions/49045221/selenium-the-element-could-not-be-scrolled-into-view
-    #       driver.execute_script("arguments[0].click();", element)      (example in Stackoverflow)
-    #       browser.execute_script("arguments[0].click();", browser.find_element_by_class_name('closeNotiIcon'))
     if popup_code:
+        # if browser.find_element_by_id('ccpa-button'): browser.find_element_by_id('ccpa-button').click(); if browser.find_element_by_id('gdpr-button'): browser.find_element_by_id('gdpr-button').click()
+        #           browser.find_element_by_class_name('closeNotiIcon').click()     #gets error cannot scroll into view
+        #
+        # https://stackoverflow.com/questions/49045221/selenium-the-element-could-not-be-scrolled-into-view
+        #       driver.execute_script("arguments[0].click();", element)      (example in Stackoverflow)
+        #       browser.execute_script("arguments[0].click();", browser.find_element_by_class_name('closeNotiIcon'))
+
         try:
-            # print("popup_code = ", popup_code)
+            # TEST CODE - will test for a button and use javascript to click it
+            #if browser.find_elements_by_class_name('onetrust-close-btn-handler'):
+            # browser.execute_script("arguments[0].click();",
+            # browser.find_element_by_class_name('onetrust-close-btn-handler'))
+            # TEST CODE END
+
+            if verbose: print("popup_code = ", popup_code)
             exec(popup_code)
             time.sleep(2)
             print("...popup clicked ok")
         except Exception as e:
-            errmsg = "!!! WARNING Could not click on popup.  Will try to continue." \
-                    " Site=" + site_description + \
-                    " Pattern=" + pattern_name + \
-                    " URL=" + site_url + \
-                    " Code=" + popup_code + \
-                    " Error=" + str(e)
-            errors.append(errmsg)
+            errmsg = "!!! WARNING Could not click on popup.  Will try to continue."
             print(errmsg)
+            err_dict['err_msg_friendly'] = errmsg
+            err_dict['err_site'] = site_description
+            err_dict['err_pattern'] = pattern_name
+            err_dict['err_url'] = site_url
+            err_dict['err_code'] = popup_code
+            err_dict['err_msg_error'] = str(e)
+            errors.append(err_dict)
+
 
     # Is there a dropdown to click (could be sort or records per page)    #TODO: maybe combine with popup_code?
     if dropdown_code:
         try:
+            if verbose: print("dropdown code=", dropdown_code)
             exec(dropdown_code)
+
             time.sleep(2)
             soup = BeautifulSoup(browser.page_source, "html.parser")
             print("...dropdown menu clicked ok; html refreshed")
@@ -159,19 +188,20 @@ def scan_by_pattern():
         except Exception as e:
             print()
             print("Error = ", e)
-            errmsg = "!!! WARNING Could not click dropdown menu as expected.  Will try to continue."  \
-                    " Site=" + site_description + \
-                    " Pattern=" + pattern_name + \
-                    " URL=" + site_url + \
-                    " Code=" + dropdown_code + \
-                    " Error=" + str(e)
-            errors.append(errmsg)
+            errmsg = "!!! WARNING Could not click dropdown menu as expected.  Will try to continue."
+            err_dict['err_msg_friendly'] = errmsg
+            err_dict['err_site'] = site_description
+            err_dict['err_pattern'] = pattern_name
+            err_dict['err_url'] = site_url
+            err_dict['err_code'] = dropdown_code
+            err_dict['err_msg_error'] = str(e)
+            errors.append(err_dict)
             print(errmsg)
 
     # Do we need to enter a search on the screen?
     if site_search and search_code:
         try:
-            #print("search found to enter")
+            if verbose: print("search code = ", search_code)
             searchbox = eval(search_code)               # the search_code will return a reference to the search box
             searchbox.send_keys(site_search)
             actions = ActionChains(browser)
@@ -180,14 +210,15 @@ def scan_by_pattern():
             soup = BeautifulSoup(browser.page_source, "html.parser")
             print("...search entered=", site_search)
         except Exception as e:
-            errmsg = "!!! WARNING Could not enter search as expected.  Will try to continue."  \
-                    " Site=" + site_description + \
-                    " Pattern=" + pattern_name + \
-                    " URL=" + site_url + \
-                    " Code=" + search_code + \
-                    " Error=" + str(e)
-            errors.append(errmsg)
+            errmsg = "!!! WARNING Could not enter search as expected.  Will try to continue."
             print(errmsg)
+            err_dict['err_msg_friendly'] = errmsg
+            err_dict['err_site'] = site_description
+            err_dict['err_pattern'] = pattern_name
+            err_dict['err_url'] = site_url
+            err_dict['err_code'] = search_code
+            err_dict['err_msg_error'] = str(e)
+            errors.append(err_dict)
 
     jobs = []                          # start with a blank list of jobs for this site
     paging = True                      # assume paging, at least 1 page
@@ -196,127 +227,175 @@ def scan_by_pattern():
     while paging:
         pages += 1                      # increment page count
 
+        # Quick sanity check.
         if data_rows_code[:5] != "soup.":
             errmsg = "!!! ERROR - unexpected value in data_rows_code.  Skipping site. " \
                 " Site=" + site_description + \
                 " Pattern=" + pattern_name + \
                 " URL=" + site_url + \
                 " Code=" + data_rows_code
-            errors.append(errmsg)
-            print(errmsg)
-            break
+            err_dict['err_msg_friendly'] = errmsg
+            err_dict['err_site'] = site_description
+            err_dict['err_pattern'] = pattern_name
+            err_dict['err_url'] = site_url
+            err_dict['err_code'] = data_rows_code
+            err_dict['err_msg_error'] = ''
+            errors.append(err_dict)
 
-        rows = eval(data_rows_code)     # Get the results from the current page
+            print(errmsg)
+            break    # nothing should execute until the site is updated
+
+        if verbose: print("data_rows_code =", data_rows_code)
+
+        try:
+            rows = eval(data_rows_code)     # Get the results from the current page
+        except Exception as e:
+            errmsg = "!!! ERROR - Error parsing data rows.  Skipping site. "
+            err_dict['err_msg_friendly'] = errmsg
+            err_dict['err_site'] = site_description
+            err_dict['err_pattern'] = pattern_name
+            err_dict['err_url'] = site_url
+            err_dict['err_code'] = data_rows_code
+            err_dict['err_msg_error'] = str(e)
+            errors.append(err_dict)
+            print(errmsg)
+
+            break    # nothing should execute until the site is updated
 
         for row in rows:
-            # print(row)
+
             job_title = ''              # start blank, make sure there are no accidents
             job_req = ''
             job_location = ''
             job_posted = ''
             job_url = ''
 
-            if verbose: print("*** PHASE 1 - Read search results ***")
+            if verbose:
+                print("*************************************")
+                print("*** PHASE 1 - Read data row       ***")
+                print("*************************************")
+                print("row= ", row)
 
-            #############
-            # TITLE - can only be on page 1
-            #############
-            try:
-                job_title = eval(title_code)
-                if verbose: print('row.title=', job_title)
-            except Exception as e:
-                errmsg = "!!! WARNING - Error parsing job title.  Skipping job." \
-                         " Site=" + site_description + \
-                         " Pattern=" + pattern_name + \
-                         " URL=" + site_url + \
-                         " Code=" + title_code + \
-                         " Error=" + str(e) + \
-                         " Row=" + str(row)
-                errors.append(errmsg)
-                print(errmsg)
-                job_title = ""           # won't be written to the database anyway
-                continue            # next job
-
-            #############
-            # REQ - can be on page 1 or page 2
-            #############
-            if str(req_code).find('row.') > -1:
-                try:
-                    job_req = eval(req_code)
-                    if verbose: print('row.req=', job_req)
-                except Exception as e:
-                    errmsg = "!!! WARNING - Error parsing job requisition. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + site_url + \
-                             " Code=" + req_code + \
-                             " Error=" + str(e) + \
-                             " Row=" + str(row)
-                    errors.append(errmsg)
-                    print(errmsg)
-                    job_req = ""
-
-            #############
-            # LOCATION - can be on page 1 or page 2
-            #############
-            if str(location_code).find('row.') > -1:
-                try:
-                    job_location = eval(location_code)
-                    if verbose: print('row.location=', job_location)
-                except Exception as e:
-                    errmsg = "!!! WARNING - Error parsing location. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + site_url + \
-                             " Code=" + location_code + \
-                             " Error=" + str(e) + \
-                             " Row=" + str(row)
-                    errors.append(errmsg)
-                    print(errmsg)
-                    job_location = ""
-
-            #############
-            # POSTED DATE- can be on page 1 or page 2
-            #############
-            if str(posted_code).find('row.') > -1:
-                try:
-                    job_posted = eval(posted_code)
-                    if verbose: print('row.posted=', job_posted)
-                except Exception as e:
-                    errmsg = "!!! WARNING - Error parsing posted date. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + site_url + \
-                             " Code=" + posted_code + \
-                             " Error=" + str(e) + \
-                             " Row=" + str(row)
-                    errors.append(errmsg)
-                    print(errmsg)
-                    job_posted = ""
-
-            #############
-            # URL can only be on page 1, but there may not be a code in the database (e.g. workday)
-            #############
+            #############################################################################################
+            # URL can only be on page 1, get first...handy in case of error on the following attributes
+            # ....but there may not be a code in the database (e.g. workday)
+            #############################################################################################
             if str(url_code)[:3] == 'row':
                 try:
                     job_url = eval(url_code)
                     if job_url[:1] == '/':                     # if a relative link, then add the base part
                         job_url = base_url + job_url
-                    if verbose: print('row.url=', job_url)
-                except Exception as e:
-                    errmsg = "!!! WARNING - Error parsing job URL. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + site_url + \
-                             " Code=" + url_code + \
-                             " Error=" + str(e) + \
-                             " Row=" + str(row)
-                    errors.append(errmsg)
-                    print(errmsg)
+                    if verbose:
+                        print("*** Job URL ***")
+                        print('row.url=', job_url)
+                        print("  >>url_code =", url_code)
 
-            #if job_url == '':                                  # if still not found, then default back to site_url
-                # print("...url still not found, using site url.")
-            #    job_url = site_url
+                except Exception as e:
+                    errmsg = "!!! WARNING - Error parsing job URL. "
+                    print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = pattern_name
+                    err_dict['err_url'] = site_url
+                    err_dict['err_code'] = url_code
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
+            ##########################################
+            # TITLE - can only be on page 1
+            ##########################################
+            try:
+                job_title = eval(title_code)
+                if verbose:
+                    print("*** Title ***")
+                    print('row.title=', job_title)
+                    print('  >>title_code=', title_code)
+
+            except Exception as e:
+                errmsg = "!!! WARNING - Error parsing job title.  Skipping job."
+                print(errmsg)
+                err_dict['err_msg_friendly'] = errmsg
+                err_dict['err_site'] = site_description
+                err_dict['err_pattern'] = pattern_name
+                err_dict['err_url'] = job_url
+                err_dict['err_code'] = title_code
+                err_dict['err_msg_error'] = str(e)
+                errors.append(err_dict)
+
+                job_title = ""           # won't be written to the database anyway
+                continue            # next job
+
+            ##########################################
+            # REQ - can be on page 1 or page 2
+            ############################################
+            if str(req_code).find('row.') > -1:
+                try:
+                    job_req = eval(req_code)
+                    if verbose:
+                        print("*** Req ***")
+                        print('row.req =', job_req)
+                        print("  >>req_code = ", req_code)
+
+                except Exception as e:
+                    errmsg = "!!! WARNING - Error parsing job requisition. "
+                    print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = pattern_name
+                    err_dict['err_url'] = job_url
+                    err_dict['err_code'] = req_code
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
+                    job_req = ""
+
+            #################################################
+            # LOCATION - can be on page 1 or page 2
+            #################################################
+            if str(location_code).find('row.') > -1:
+                try:
+                    job_location = eval(location_code)
+                    if verbose:
+                        print("*** Location ***")
+                        print('row.location=', job_location)
+                        print("  >>location_code = ", location_code)
+                except Exception as e:
+                    errmsg = "!!! WARNING - Error parsing location. "
+                    print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = pattern_name
+                    err_dict['err_url'] = job_url
+                    err_dict['err_code'] = location_code
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
+                    job_location = ""
+
+            ##################################################
+            # POSTED DATE- can be on page 1 or page 2
+            ###################################################
+            if str(posted_code).find('row.') > -1:
+                try:
+                    job_posted = eval(posted_code)
+                    if verbose:
+                        print("*** Posted Date ***")
+                        print('row.posted=', job_posted)
+                        print("  >>posted_code = ", posted_code)
+
+                except Exception as e:
+                    errmsg = "!!! WARNING - Error parsing posted date. "
+                    print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = pattern_name
+                    err_dict['err_url'] = job_url
+                    err_dict['err_code'] = posted_code
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
+                    job_posted = ""
+
 
             job = {}            # Build a dictionary object of all the values that we have so far
                                 # Will put onto the jobs[] list to pass onto the next phase
@@ -333,25 +412,37 @@ def scan_by_pattern():
         ##########################
         if page_results_code:
             try:
+                if verbose:
+                    print("****************************************")
+                    print("*** PHASE 1.B - PAGE results (maybe) ***")
+                    print("****************************************")
+                    print("page_results_code = ", page_results_code)
+
+                # TEST CODE
+                # Original
+                #browser.find_element_by_class_name('next-page-btn').click()
+                #browser.find_element_by_class_name('next-page-btn').send_keys(Keys.ENTER)
+                #actions = ActionChains(browser)
+                #actions.send_keys(Keys.ENTER).perform()
+
+                #print("about to try to scroll next button into view....waiting 5 seconds....")
+                #time.sleep(5)
+                #browser.execute_script('arguments[0].scrollIntoView(true);', btn)
+                #browser.execute_script('arguments[0].scrollIntoView(false);', btn)
+                #ActionChains(browser).move_to_element(btn).perform()
+                #print("scrolling completed")
+                #time.sleep(5)
+                # TEST CODE END
+
                 exec(page_results_code)
                 time.sleep(2)
                 soup = BeautifulSoup(browser.page_source, "html.parser")
                 print("...paging button pressed on page =", pages)
             except Exception as e:
-                if pages == 1:
-                    errmsg = "!!! WARNING.  Could not find/click the paging button on first page. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + site_url + \
-                             " Code=" + page_results_code + \
-                             " Error=" + str(e)
-                    errors.append(errmsg)
-                    print(errmsg)
-
-                    # time.sleep(30)
-                else:
-                    print("...paging button no longer found.  Pages read = ", pages)
-                paging = False
+                print("...paging button no longer found.  Pages read = ", pages)
+                if verbose:
+                    print("paging error = ", e)
+                paging = False          # stop paging
         else:
             print("...results Paging not enabled.  Only first page read. ")
             paging = False
@@ -363,7 +454,10 @@ def scan_by_pattern():
     #########################################################################################
     # 2nd phase is to CRAWL each url and get the attributes that were not on the first page
     #########################################################################################
-    if verbose: print("*** PHASE 2 - CRAWL results (maybe) ***")
+    if verbose:
+        print("***************************************")
+        print("*** PHASE 2 - CRAWL results (maybe) ***")
+        print("***************************************")
     if crawl == "true":
         jobs2 = []                      #create a new list for the 2nd phase, then overwrite the jobs list
         for job in jobs:
@@ -384,62 +478,82 @@ def scan_by_pattern():
 
             detail = BeautifulSoup(browser.page_source, "html.parser")
 
+            ##################################################
+            # URL - can only be on page 1, not relevant here
             # TITLE - can only be on page 1, not relevant here
+            ##################################################
 
+            #######
             # REQ
+            #######
             if str(req_code).find('detail.') > -1:
                 try:
                     job_req = eval(req_code)
-                    if verbose: print('detail.req=', job_req)
+                    if verbose:
+                        print("*** Req (detail page) ***")
+                        print('detail.req=', job_req)
+                        print('  >>req_code =', req_code)
                 except Exception as e:
-                    errmsg = "!!! WARNING - Error parsing job requisition on details page. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + job_url + \
-                             " Code=" + req_code + \
-                             " Error=" + str(e) + \
-                             " Job=" + str(job)
-                    errors.append(errmsg)
+                    errmsg = "!!! WARNING - Error parsing job requisition on details page. "
                     print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = pattern_name
+                    err_dict['err_url'] = job_url
+                    err_dict['err_code'] = req_code
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
                     job_req = ""
 
+            ################
             # LOCATION
+            ################
             if str(location_code).find('detail.') > -1:
                 try:
                     job_location = eval(location_code)
-                    if verbose: print('detail.location=', job_location)
+                    if verbose:
+                        print("*** Location (detail page) ***")
+                        print('detail.location=', job_location)
+                        print("  >>location_code=", location_code)
                 except Exception as e:
-                    errmsg = "!!! WARNING - Error parsing location on details page. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + job_url + \
-                             " Code=" + location_code + \
-                             " Error=" + str(e) + \
-                             " Job=" + str(job)
-                    errors.append(errmsg)
+                    errmsg = "!!! WARNING - Error parsing location on details page. "
                     print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = pattern_name
+                    err_dict['err_url'] = job_url
+                    err_dict['err_code'] = location_code
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
                     job_location = ""
 
+            ##################
             # DATE POSTED
+            ###################
             if str(posted_code).find('detail.') > -1:
                 try:
                     job_posted = eval(posted_code)
-                    if verbose: print('detail.posted=', job_posted)
+                    if verbose:
+                        print("*** Date Posted (detail page) ***")
+                        print('detail.posted=', job_posted)
+                        print("  >>posted_code = ", posted_code)
+
                 except Exception as e:
-                    errmsg = "!!! WARNING - Error parsing posted date on details page. " \
-                             " Site=" + site_description + \
-                             " Pattern=" + pattern_name + \
-                             " URL=" + job_url + \
-                             " Code=" + posted_code + \
-                             " Error=" + str(e) + \
-                             " Job=" + str(job)
-                    errors.append(errmsg)
+                    errmsg = "!!! WARNING - Error parsing posted date on details page. "
                     print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = pattern_name
+                    err_dict['err_url'] = job_url
+                    err_dict['err_code'] = posted_code
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
                     job_posted = ""
 
-            # URL - can only be on page 1, not relevant here
-
-            # Update the job dictionary with potentally new values  (title and url will be unchanged)
+            # Update the job dictionary with potentially new values  (title and url will be unchanged)
             job['req'] = job_req
             job['location'] = job_location
             job['posted'] = job_posted
@@ -453,7 +567,10 @@ def scan_by_pattern():
     #########################################
     # 3rd phase is to save it to the database
     #########################################
-    if verbose: print("*** PHASE 3 - SAVE to database ***")
+    if verbose:
+        print("**********************************")
+        print("*** PHASE 3 - SAVE to database ***")
+        print("**********************************")
     job_count = len(jobs)
     for job in jobs:
 
@@ -482,7 +599,6 @@ def scan_by_pattern():
     update_site()
     print("*********************************")
 
-
 def save_job():
 
     global errmsg
@@ -494,20 +610,32 @@ def save_job():
                      " Site=" + site_description
             errors.append(errmsg)
             print(errmsg)
+            err_dict['err_msg_friendly'] = errmsg
+            err_dict['err_site'] = site_description
+            err_dict['err_pattern'] = ''
+            err_dict['err_url'] = ''
+            err_dict['err_code'] = ''
+            err_dict['err_msg_error'] = ''
+            errors.append(err_dict)
+
             return
 
     # See if the job has already been logged.  Return if so.
     sql = "SELECT count(*) " \
-            "FROM Jobs " \
-            "WHERE Site_Id = " + str(site_id)
+          "FROM Jobs " \
+          "WHERE Site_Id = " + str(site_id)
 
     # if there is a job_req present, go by that
     if job_req != '':
         sql = sql + " AND Job_Req = '" + job_req + "'"
-    else:                       # otherwise, go by job title + job posting date
-        sql = sql + " AND Job_Title = '" + job_title + "' " \
-            " AND Job_Posted='" + job_posted + "'"
-    #print("duplicate check sql =", sql)
+    else:
+        if job_url != '':                              # if no req, go by job title + job url
+            sql = sql + " AND Job_Title = '" + job_title + "' " \
+                " AND Job_URL='" + job_url + "'"
+        else:                                          # if no req and no url, go by job title + job posting date
+            sql = sql + " AND Job_Title = '" + job_title + "' " \
+                " AND Job_Posted='" + job_posted + "'"
+    if verbose: print("duplicate check sql =", sql)
 
     cursor.execute(sql)
     job_count = cursor.fetchone()
@@ -527,17 +655,21 @@ def save_job():
         "'" + str(job_url) + "', " \
         "'" + str(run_dt) + "') "
 
-    #print("INSERT JOBS SQL =", sql)
+    if verbose: print("INSERT job sql =", sql)
     try:
         cursor.execute(sql)
         dbcon.commit()
         print("...job saved to database.")
     except Exception as e:
-        errmsg = "!!! INSERT ERROR - Could not insert new job" \
-                 " SQL=" + sql + \
-                 " Error=" + str(e)
-        errors.append(errmsg)
+        errmsg = "!!! INSERT ERROR - Could not insert new job"
         print(errmsg)
+        err_dict['err_msg_friendly'] = errmsg
+        err_dict['err_site'] = site_description
+        err_dict['err_pattern'] = ''
+        err_dict['err_url'] = job_url
+        err_dict['err_code'] = sql
+        err_dict['err_msg_error'] = str(e)
+        errors.append(err_dict)
 
 def update_site():
 
@@ -572,8 +704,7 @@ def send_email():
     sql = "select S.Site_Description, J.Job_Title, J.Job_Inserted, J.Job_Req, J.Job_Posted, J.Job_URL, " \
             "J.Job_Location, S.Site_URL "\
             "from Jobs J, Sites S " \
-            "where J.Site_Id=S.Site_Id " \
-            "order by Site_Description "
+            "where J.Site_Id=S.Site_Id "
 
     # If the time > 8pm, then send the whole day's findings
     if prod != "true":
@@ -581,16 +712,20 @@ def send_email():
 
     if int(hour) > 19:          # Get everything from today
         emailsubject = "JOB Postings Summary for " + today
-        sql += "AND Job_Inserted > '" + today + "';"
+        sql += "AND Job_Inserted > '" + today + "' "
     else:                       # Get just the lat run
         emailsubject = "JOB Postings Incremental for " + run_dt
-        sql += "AND Job_Inserted = '" + run_dt + "';"
+        sql += "AND Job_Inserted = '" + run_dt + "' "
+
+    # add the order by clause
+    sql += "ORDER BY Site_Description; "
 
     if prod != "true":
         emailsubject = "DEV - " + emailsubject
 
     # otherwise, just send what was found in this run
 
+    if verbose: print("Email Report SQL=", sql)
     cursor.execute(sql)
     jobs = cursor.fetchall()
 
@@ -618,6 +753,8 @@ def send_email():
         url = job[5]
         location = job[6]
         site_url = job[7]
+        if url == '':                       # If the job url is missing, substitute the site url for the link
+            url = site_url
 
         if company != previous_company:         # change in company, write out company header w/link
             html += "<tr width=100%><td><a href='" + site_url + "'>" + company + "</a></td></tr>"
@@ -634,8 +771,8 @@ def send_email():
     # List out the errors
     if errors:
         html += "<tr><td><hr>Error(s) detected:</td></tr>"
-        for err in errors:
-            html += "<tr><td colspan='5'>" + err + "</td></tr>"
+        for err in errors:                                  #TODO:  pretty this up
+            html += "<tr><td colspan='5'>" + str(err) + "</td></tr>"
     else:
         html += "<tr><td colspan='5'><hr>No errors detected.</td></tr>"
 
@@ -659,11 +796,26 @@ def send_email():
     new_message.set_payload(html)
     mailbox.append("INBOX", emailflag, imaplib.Time2Internaldate(time.time()), str(new_message).encode('utf-8'))
 
-    print("****************************")
     print("...email sent")
 
     # Logout of mailbox
     mailbox.logout()
+
+
+def test_code():
+
+
+    err_dic = {}
+
+    #err_dict['err_inserted'] = "this is the timestamp"
+    err_dic['err_msg_friendly'] = "this is a friendly message"
+    err_dic['err_site'] = "this is the site name"
+    err_dic['err_pattern'] = "this is the pattern name"
+    err_dic['err_url'] = "this is the url in error"
+    err_dic['err_code'] = "this is the custom code from the database"
+    err_dic['err_msg_error'] = "this is the actual error message raised by the exception"
+    #errors.append(err_dic)
+
 
 
 ##########################################
@@ -682,6 +834,7 @@ myemailaddress = os.environ.get("EMAIL_ADDRESS")
 # Connect to database
 try:
     dbcon = sqlite3.connect('./db/jobs.db')
+    cursor = dbcon.cursor()
     print("Database connected")
 except Exception as e:
     errmsg = "!!! FATAL ERROR Database NOT connected." \
@@ -695,7 +848,7 @@ if prod == "true":       # prod-settings
     verbose = False
     max_pages = 5
 else:                   # non-prod settings
-    max_pages = 2       # just 2 pages deep for non-prod
+    max_pages = 3
 
 while True:             # Forever loop (PROD only, drops out after one loop for NON-PROD)
 
@@ -709,12 +862,12 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
 
     # capture the time of the run (all entries will have same timestamp for this run)
     run_dt = str(datetime.datetime.now())               # full timestamp
+    test_code()
     today = str(datetime.datetime.now())[:10]           # just the date
     hour = datetime.datetime.now().strftime("%H")       # just the hour (will control what kind of email is sent)
     print("Run at ", run_dt)
 
     # Get a list of sites to crawl....stagger, stagger
-    cursor = dbcon.cursor()
     sql = "SELECT Site_ID, Site_URL, Site_Last_Scan_Date, Site_Times_Scanned_Today, Site_Description, " \
           "Site_Search, Site_Pattern_ID " \
           "FROM Sites " \
@@ -731,7 +884,6 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
                  " Error=" + str(e)
         print(errmsg)
         quit()
-
 
     for site in sites:
         site_id = site[0]                      #Capture all the values
@@ -751,17 +903,51 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
     browser.close()
 
     # List out the errors
-    print("****************************")
     if errors:
-        for err in errors:
-            print(err)
-            sql = "INSERT INTO errors (error_inserted, error_description) VALUES (" \
-                "'" + run_dt + "'," \
-                "'" + err.replace("'", "''") + "')"             #Double up the single quotes in the error string
-            #print("save error sql=", sql)
+        print("********* ERRORS LISTING ***************")
+        for err_dict in errors:
+            print(err_dict)
+
+            err_inserted = run_dt               # use the rund_dt
+            err_msg_friendly = err_dict.get('err_msg_friendly', '')
+            err_site = err_dict.get('err_site', '')
+            err_pattern = err_dict.get('err_pattern', '')
+            err_url = err_dict.get('err_url', '')
+            err_code = err_dict.get('err_code', '')
+            err_msg_error = err_dict.get('err_msg_error', '')
+
+            sql = "INSERT INTO errors " \
+                  "(err_inserted, err_msg_friendly, err_site, err_pattern, err_url, err_code, err_msg_error)" \
+                  " VALUES (" + \
+                  "'" + str(err_inserted) + "', " \
+                  "'" + str(err_msg_friendly) + "', " \
+                  "'" + str(err_site) + "', " \
+                  "'" + str(err_pattern) + "', " \
+                  "'" + str(err_url) + "', " \
+                  "'" + str(err_code).replace("'", "''") + "', " \
+                  "'" + str(err_msg_error).replace("'", "''") + "'" \
+                  ");"
+            if verbose: print("save error sql=", sql)
             cursor.execute(sql)
             dbcon.commit()
 
+            if verbose:
+                print("save error to database:")
+                print("  >> err_inserted =", err_msg_friendly)
+                print("  >> err_msg_friendly =", err_msg_friendly)
+                print("  >> err_site =", err_site)
+                print("  >> err_pattern =", err_pattern)
+                print("  >> err_url =", err_url)
+                print("  >> err_code =", err_code)
+                print("  >> err_msg_error =", err_msg_error)
+
+            #sql = "INSERT INTO errors (error_inserted, error_description) VALUES (" \
+            #    "'" + run_dt + "'," \
+            #    "'" + err.replace("'", "''") + "')"             #Double up the single quotes in the error string
+            #print("save error sql=", sql)
+            #cursor.execute(sql)
+            #dbcon.commit()
+        print("********* END ERRORS LISTING ***************")
     else:
         print("...no errors logged.  Woo hoo!")
 
