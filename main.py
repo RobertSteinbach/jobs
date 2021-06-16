@@ -39,6 +39,9 @@ import time  # for sleep
 import os               # to get environment variables
 import re               # needed!  will be used in code in the database
 
+
+verbose = False             # debugging flag
+
 # Set some global variables
 site_id = ''
 site_url = ''
@@ -63,7 +66,6 @@ err_dict = {}               # structured error dictionary.   Append to the error
                                 # err_dict['err_code'] = "this is the custom code from the database"
                                 # err_dict['err_msg_error'] = "this is the actual error message raised by the exception"
 
-verbose = True             # debugging flag
 
 ##########################################
 # SUBROUTINES GO HERE
@@ -81,6 +83,10 @@ def scan_by_pattern():
     global errmsg
     global errors
     global err_dict
+
+    jobs = []                          # start with a blank list of jobs for this site
+    paging = True                      # assume paging, at least 1 page
+    pages = 0                          # keep track of the pages
 
     # Read some data about this site - PATTERN
     sql = "SELECT " \
@@ -175,7 +181,7 @@ def scan_by_pattern():
             errors.append(err_dict)
 
 
-    # Is there a dropdown to click (could be sort or records per page)    #TODO: maybe combine with popup_code?
+    # Is there a DROPDOWN to click (could be sort or records per page)    #TODO: maybe combine with popup_code?
     if dropdown_code:
         try:
             if verbose: print("dropdown code=", dropdown_code)
@@ -198,11 +204,11 @@ def scan_by_pattern():
             errors.append(err_dict)
             print(errmsg)
 
-    # Do we need to enter a search on the screen?
+    # Do we need to enter a SEARCH on the screen?
     if site_search and search_code:
         try:
             if verbose: print("search code = ", search_code)
-            searchbox = eval(search_code)               # the search_code will return a reference to the search box
+            searchbox = eval(search_code)               # the search_code must return a reference to the search box
             searchbox.send_keys(site_search)
             actions = ActionChains(browser)
             actions.send_keys(Keys.ENTER).perform()
@@ -210,7 +216,7 @@ def scan_by_pattern():
             soup = BeautifulSoup(browser.page_source, "html.parser")
             print("...search entered=", site_search)
         except Exception as e:
-            errmsg = "!!! WARNING Could not enter search as expected.  Will try to continue."
+            errmsg = "!!! ERROR Could not enter search as expected.  Skipping site to reduce irrelevant postings."
             print(errmsg)
             err_dict['err_msg_friendly'] = errmsg
             err_dict['err_site'] = site_description
@@ -219,10 +225,7 @@ def scan_by_pattern():
             err_dict['err_code'] = search_code
             err_dict['err_msg_error'] = str(e)
             errors.append(err_dict)
-
-    jobs = []                          # start with a blank list of jobs for this site
-    paging = True                      # assume paging, at least 1 page
-    pages = 0                          # keep track of the pages
+            paging = False          # this will cause 0 records to be found, but the site will be updated
 
     while paging:
         pages += 1                      # increment page count
@@ -243,7 +246,8 @@ def scan_by_pattern():
             errors.append(err_dict)
 
             print(errmsg)
-            break    # nothing should execute until the site is updated
+            paging = False       # nothing else should execute until the site is updated
+            continue
 
         if verbose: print("data_rows_code =", data_rows_code)
 
@@ -260,10 +264,10 @@ def scan_by_pattern():
             errors.append(err_dict)
             print(errmsg)
 
-            break    # nothing should execute until the site is updated
+            paging = False       # stop paging.  if page 1, nothing else should execute until site is updated
+            continue
 
         for row in rows:
-
             job_title = ''              # start blank, make sure there are no accidents
             job_req = ''
             job_location = ''
@@ -396,7 +400,6 @@ def scan_by_pattern():
 
                     job_posted = ""
 
-
             job = {}            # Build a dictionary object of all the values that we have so far
                                 # Will put onto the jobs[] list to pass onto the next phase
             job['title'] = job_title
@@ -444,12 +447,17 @@ def scan_by_pattern():
                     print("paging error = ", e)
                 paging = False          # stop paging
         else:
-            print("...results Paging not enabled.  Only first page read. ")
+            if verbose:
+                print("...results Paging not enabled.  Only first page read. ")
             paging = False
 
         if pages >= max_pages:
             print("...max pages reached.  Pages=", pages)
             paging = False
+
+    # Paging completed
+    # Give a progress of how many jobs were found in phase 1
+    print("...number of job postings found =", len(jobs))
 
     #########################################################################################
     # 2nd phase is to CRAWL each url and get the attributes that were not on the first page
@@ -468,8 +476,9 @@ def scan_by_pattern():
             job_posted = job['posted']
             job_url = job['url']
 
+            print(job_title)                # show progress by job title
             if job_url in previous_urls:
-                print("...url previously saved; skipping job.  Title =", job_title)
+                print("...url previously saved; skipping crawl.")
                 continue  # next job
 
             print("...crawling to ", job_url)
@@ -584,20 +593,23 @@ def scan_by_pattern():
             print("********* job ***********")
             print('p3.job=', job)
 
-        print("Title=", job_title)
-        print("Req=", job_req)
-        print("Location=", job_location)
-        print("Date Posted=", job_posted)
-        print("Job url=", job_url)
+        if verbose:
+            print("Title=", job_title)
+            print("Req=", job_req)
+            print("Location=", job_location)
+            print("Date Posted=", job_posted)
+            print("Job url=", job_url)
+        else:
+            print(job_title)            # at least show the titles
 
         save_job()
+
     ###################
     # CLEAN UP
     ###################
-    print("*********************************")
-    print("Total jobs examined:", job_count)
+    print("...total jobs examined:", job_count)
     update_site()
-    print("*********************************")
+
 
 def save_job():
 
@@ -623,18 +635,17 @@ def save_job():
     # See if the job has already been logged.  Return if so.
     sql = "SELECT count(*) " \
           "FROM Jobs " \
-          "WHERE Site_Id = " + str(site_id)
+          "WHERE Site_Id = " + str(site_id) + \
+          " AND Job_Title = '" + job_title + "' "           # Job title + [REQ | URL | Posted Date]
 
-    # if there is a job_req present, go by that
     if job_req != '':
-        sql = sql + " AND Job_Req = '" + job_req + "'"
+        sql = sql + " AND Job_Req = '" + job_req + "'"   # First check by REQ
     else:
-        if job_url != '':                              # if no req, go by job title + job url
-            sql = sql + " AND Job_Title = '" + job_title + "' " \
-                " AND Job_URL='" + job_url + "'"
-        else:                                          # if no req and no url, go by job title + job posting date
-            sql = sql + " AND Job_Title = '" + job_title + "' " \
-                " AND Job_Posted='" + job_posted + "'"
+        if job_url != '':                                # if no REQ, go by job title + job URL
+            sql = sql + " AND Job_URL='" + job_url + "'"
+        else:                                          # if no req and no url, go by job title + job posting DATE
+            sql = sql + " AND Job_Posted='" + job_posted + "'"
+
     if verbose: print("duplicate check sql =", sql)
 
     cursor.execute(sql)
@@ -767,17 +778,20 @@ def send_email():
         html += "<td>" + inserted + "</td>"
         # html += "<td>" + location + "</td>"
         html += "</tr>"
+    html += "</table><hr>"
 
     # List out the errors
     if errors:
-        html += "<tr><td><hr>Error(s) detected:</td></tr>"
-        for err in errors:                                  #TODO:  pretty this up
-            html += "<tr><td colspan='5'>" + str(err) + "</td></tr>"
+        html += "Error(s) detected:<table>"
+        for err in errors:
+            for err_attrib in err:
+                html += "<tr><td='5'>" + str(err_attrib) + "</td></tr>"
+        html += "</table>"
     else:
-        html += "<tr><td colspan='5'><hr>No errors detected.</td></tr>"
+        html += "No errors detected."
 
     # Finish the html
-    html += "</table></html>"
+    html += "</html>"
 
     # Connect to INBOX
     #print(imapserver, userid, myemailaddress)          #print out credentials to make sure I got them
@@ -814,13 +828,16 @@ def test_code():
     err_dic['err_url'] = "this is the url in error"
     err_dic['err_code'] = "this is the custom code from the database"
     err_dic['err_msg_error'] = "this is the actual error message raised by the exception"
-    #errors.append(err_dic)
+    errors.append(err_dic)
 
 
 
 ##########################################
 # MAIN
 ##########################################
+
+print("*********** START ***************")
+#test_code()
 
 # Get secrets from environment variables
 # In Pycharm, select the "Edit Configuration" menu item in the project drop-down box in top menu bar
@@ -862,7 +879,6 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
 
     # capture the time of the run (all entries will have same timestamp for this run)
     run_dt = str(datetime.datetime.now())               # full timestamp
-    test_code()
     today = str(datetime.datetime.now())[:10]           # just the date
     hour = datetime.datetime.now().strftime("%H")       # just the hour (will control what kind of email is sent)
     print("Run at ", run_dt)
@@ -904,7 +920,7 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
 
     # List out the errors
     if errors:
-        print("********* ERRORS LISTING ***************")
+        print("********* ", len(errors), "Errors Found ***********")
         for err_dict in errors:
             print(err_dict)
 
@@ -927,7 +943,7 @@ while True:             # Forever loop (PROD only, drops out after one loop for 
                   "'" + str(err_code).replace("'", "''") + "', " \
                   "'" + str(err_msg_error).replace("'", "''") + "'" \
                   ");"
-            if verbose: print("save error sql=", sql)
+            # if verbose: print("save error sql=", sql)
             cursor.execute(sql)
             dbcon.commit()
 
