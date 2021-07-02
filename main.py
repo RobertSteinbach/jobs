@@ -763,7 +763,7 @@ def send_email():
     #   Before 5am - complete listing of everything still active
     #   5am to 8 pm - differential listings
     #   after 8pm - daily summary
-    if int(hour < 5):  # if before 5am, then list everything that is still active
+    if int(hour) < 5:  # if before 5am, then list everything that is still active
         emailsubject = "JOB Postings Complete Listing as of " + run_dt
         sql += "AND Job_Last_Detected = '" + run_dt + "' "
     else:
