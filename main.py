@@ -478,7 +478,25 @@ def scan_by_pattern():
 
             print(job_title)                # show progress by job title
             if job_url in previous_urls:
-                print("...url previously saved; skipping crawl.")
+                print("...url previously saved; skipping crawl and updating job_last_detected.")
+                sql = "update jobs set job_last_detected='" + run_dt + "' WHERE " \
+                "Site_Id=" + str(site_id) + " AND Job_URL='" + job_url + "' "
+                if verbose: print("update previously crawled job sql=", sql)
+
+                try:
+                    cursor.execute(sql)
+                    dbcon.commit()
+                except Exception as e:
+                    errmsg = "!!! UPDATE ERROR - Could not update previously crawled job"
+                    print(errmsg)
+                    err_dict['err_msg_friendly'] = errmsg
+                    err_dict['err_site'] = site_description
+                    err_dict['err_pattern'] = ''
+                    err_dict['err_url'] = job_url
+                    err_dict['err_code'] = sql
+                    err_dict['err_msg_error'] = str(e)
+                    errors.append(err_dict)
+
                 continue  # next job
 
             print("...crawling to ", job_url)
@@ -674,7 +692,8 @@ def save_job():
         return
 
     # Save the job to the database
-    sql = "INSERT INTO Jobs ('Site_ID','Job_Title','Job_Posted','Job_Req','Job_Location','Job_URL', 'Job_Inserted') " \
+    sql = "INSERT INTO Jobs ('Site_ID','Job_Title','Job_Posted','Job_Req','Job_Location','Job_URL'," \
+        "'Job_Inserted','Job_Last_Detected') " \
         "VALUES (" \
         " " + str(site_id) + ", " \
         "'" + str(job_title).replace("'", "''") + "', " \
@@ -682,6 +701,7 @@ def save_job():
         "'" + str(job_req) + "', " \
         "'" + str(job_location).replace("'", "''") + "', " \
         "'" + str(job_url) + "', " \
+        "'" + str(run_dt) + "', " \
         "'" + str(run_dt) + "') "
 
     if verbose: print("INSERT job sql =", sql)
