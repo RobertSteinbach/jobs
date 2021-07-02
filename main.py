@@ -212,7 +212,7 @@ def scan_by_pattern():
             searchbox.send_keys(site_search)
             actions = ActionChains(browser)
             actions.send_keys(Keys.ENTER).perform()
-            time.sleep(2)
+            time.sleep(5)
             soup = BeautifulSoup(browser.page_source, "html.parser")
             print("...search entered=", site_search)
         except Exception as e:
@@ -636,7 +636,7 @@ def save_job():
     sql = "SELECT count(*) " \
           "FROM Jobs " \
           "WHERE Site_Id = " + str(site_id) + \
-          " AND Job_Title = '" + job_title + "' "           # Job title + [REQ | URL | Posted Date]
+          " AND Job_Title = '" + job_title.replace("'", "''") + "' "           # Job title + [REQ | URL | Posted Date]
 
     if job_req != '':
         sql = sql + " AND Job_Req = '" + job_req + "'"   # First check by REQ
@@ -659,10 +659,10 @@ def save_job():
     sql = "INSERT INTO Jobs ('Site_ID','Job_Title','Job_Posted','Job_Req','Job_Location','Job_URL', 'Job_Inserted') " \
         "VALUES (" \
         " " + str(site_id) + ", " \
-        "'" + str(job_title) + "', " \
+        "'" + str(job_title).replace("'", "''") + "', " \
         "'" + str(job_posted) + "', "  \
         "'" + str(job_req) + "', " \
-        "'" + str(job_location) + "', " \
+        "'" + str(job_location).replace("'", "''") + "', " \
         "'" + str(job_url) + "', " \
         "'" + str(run_dt) + "') "
 
