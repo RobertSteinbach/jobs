@@ -40,7 +40,7 @@ import os               # to get environment variables
 import re               # needed!  will be used in code in the database
 
 
-verbose = False             # debugging flag
+verbose = True             # debugging flag
 
 # Set some global variables
 site_id = ''
@@ -652,7 +652,25 @@ def save_job():
     job_count = cursor.fetchone()
     #print("job count=", job_count)
     if job_count[0] > 0:
-        print("...job already in database. No save.")
+
+        print("...job already in database. Updating Job_Last_Detected...")
+
+        sql = "UPDATE JOBS SET Job_Last_Detected='" + run_dt + "' " + sql[sql.find("WHERE"):]
+        if verbose: print("update existing job sql =", sql)
+        try:
+            cursor.execute(sql)
+            dbcon.commit()
+        except Exception as e:
+            errmsg = "!!! UPDATE ERROR - Could not update existing job"
+            print(errmsg)
+            err_dict['err_msg_friendly'] = errmsg
+            err_dict['err_site'] = site_description
+            err_dict['err_pattern'] = ''
+            err_dict['err_url'] = job_url
+            err_dict['err_code'] = sql
+            err_dict['err_msg_error'] = str(e)
+            errors.append(err_dict)
+
         return
 
     # Save the job to the database
