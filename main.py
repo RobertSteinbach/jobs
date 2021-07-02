@@ -755,24 +755,30 @@ def send_email():
             "from Jobs J, Sites S " \
             "where J.Site_Id=S.Site_Id "
 
-    # If the time > 8pm, then send the whole day's findings
-    if prod != "true":
-        hour = 20      # Force it for non-prod
+    # fake the hour for non-prod debugging
+    #if prod != "true": hour = 4
 
-    if int(hour) > 19:          # Get everything from today
-        emailsubject = "JOB Postings Summary for " + today
-        sql += "AND Job_Inserted > '" + today + "' "
-    else:                       # Get just the lat run
-        emailsubject = "JOB Postings Incremental for " + run_dt
-        sql += "AND Job_Inserted = '" + run_dt + "' "
 
+    # Depends on the time.
+    #   Before 5am - complete listing of everything still active
+    #   5am to 8 pm - differential listings
+    #   after 8pm - daily summary
+    if int(hour < 5):  # if before 5am, then list everything that is still active
+        emailsubject = "JOB Postings Complete Listing as of " + run_dt
+        sql += "AND Job_Last_Detected = '" + run_dt + "' "
+    else:
+        if int(hour) > 19:          # if after 8pm, then list everything found just today
+            emailsubject = "JOB Postings Daily Digest for " + today
+            sql += "AND Job_Inserted > '" + today + "' "
+        else:  # between 5am and 8pm
+            emailsubject = "JOB Postings Incremental for " + run_dt
+            sql += "AND Job_Inserted = '" + run_dt + "' "
     # add the order by clause
     sql += "ORDER BY Site_Description; "
 
     if prod != "true":
         emailsubject = "DEV - " + emailsubject
 
-    # otherwise, just send what was found in this run
 
     if verbose: print("Email Report SQL=", sql)
     cursor.execute(sql)
