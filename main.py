@@ -784,8 +784,8 @@ def send_email():
     cursor.execute(sql)
     jobs = cursor.fetchall()
 
-    if len(jobs) == 0:
-        print("No jobs were found on this run.  Email cancelled.")
+    if len(jobs) == 0 and len(errors) == 0:
+        print("No jobs/errors were found on this run.  Email cancelled.")
         return
 
     # start the HTML w/ header
@@ -826,10 +826,15 @@ def send_email():
 
     # List out the errors
     if errors:
-        html += "Error(s) detected:<table>"
+        html += "Error(s) detected:<table width='100%'>"
         for err in errors:
-            for err_attrib in err:
-                html += "<tr><td='5'>" + str(err_attrib) + "</td></tr>"
+            html += "<tr width='100%'>"
+            html += "<td>" + err['err_msg_friendly'] + "</td>"
+            html += "<td><a href='" + err['err_url'] + "'>" + err['err_site'] + "</a></td>"
+            html += "<td>" + err['err_pattern'] + "</td>"
+            html += "<td>" + err['err_code'] + "</td>"
+            html += "<td>" + err['err_msg_error'] + "</td>"
+            html += "</tr>"
         html += "</table>"
     else:
         html += "No errors detected."
