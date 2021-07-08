@@ -139,7 +139,20 @@ def scan_by_pattern():
     print("URL =", site_url)
     print("Pattern =", pattern_name)
     #browser.fullscreen_window()
-    browser.get(site_url)
+    try:
+        browser.get(site_url)
+    except Exception as e:
+        errmsg = "!!! ERROR Could not open URL.  Skipping site."
+        print(errmsg)
+        err_dict['err_msg_friendly'] = errmsg
+        err_dict['err_site'] = site_description
+        err_dict['err_pattern'] = pattern_name
+        err_dict['err_url'] = site_url
+        err_dict['err_code'] = ''
+        err_dict['err_msg_error'] = str(e)
+        errors.append(err_dict)
+        return
+
     time.sleep(2)                   #TODO put in better wait code
     # browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")        # page to bottom
     soup = BeautifulSoup(browser.page_source, "html.parser")
